@@ -504,6 +504,11 @@ tr:hover{
   font-size: 18px;
   box-sizing: border-box;
 }
+.modal input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  margin-right: 10px;
+}
 td button {
   background: #8bd311;
   color: #000;
@@ -530,4 +535,42 @@ td button:hover {
 
 .modal-actions button:first-child:hover {
   background: #a5f01c;
+}
+.save-btn{
+  background:#8dd313;
+  color:#000;
+  font-weight:700;
+  border:none;
+  cursor:pointer;
+}
+.cancel-btn{
+  background:#dc3545;
+  color:#fff;
+  font-weight:700;
+}
+.checkbox-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:15px 0;
+}
+
+.checkbox-row input[type="checkbox"]{
+  width:18px;
+  height:18px;
+}
+.adjustment-actions{
+  display:flex;
+  gap:15px;
+  margin-top:20px;
+}
+
+.adjustment-actions button{
+  flex:1;
+  height:55px;
+  font-size:20px;
+  font-weight:700;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
 }

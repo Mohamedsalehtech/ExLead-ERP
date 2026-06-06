@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import "./App.css";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import {
   FaHome,
@@ -9,7 +11,8 @@ import {
   FaMoneyBillWave,
   FaCreditCard,
   FaChartBar,
-  FaCog
+  FaCog,
+  FaGift
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
@@ -28,6 +31,7 @@ function App() {
   const [revenueCategories, setRevenueCategories] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [adjustments, setAdjustments] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activePage, setActivePage] = useState("dashboard");
   const [showAddEmployee, setShowAddEmployee] = useState(false);
@@ -39,6 +43,17 @@ const [newDepartment, setNewDepartment] = useState({
 });
 
 const [editingDepartment, setEditingDepartment] = useState(null);
+const [showAddAdjustment, setShowAddAdjustment] = useState(false);
+const [editingAdjustment, setEditingAdjustment] = useState(null);
+const [newAdjustment, setNewAdjustment] = useState({
+  employee_id: "",
+  adjustment_type: "",
+  amount: "",
+  reason: "",
+  start_date: "",
+  end_date: "",
+  is_recurring: false,
+});
 const [showAddRevenue, setShowAddRevenue] = useState(false);
 
 const [editingRevenue, setEditingRevenue] = useState(null);
@@ -76,6 +91,14 @@ const [newExpense, setNewExpense] = useState({
     basic_salary: "",
     hire_date: "",
   });
+const [payrolls, setPayrolls] = useState([]);
+const [companySettings, setCompanySettings] = useState(null);
+const [showAddPayroll, setShowAddPayroll] = useState(false);
+
+const [newPayroll, setNewPayroll] = useState({
+  employee_id: "",
+  payroll_month: "",
+});
 
   useEffect(() => {
     loadData();
@@ -117,6 +140,16 @@ await supabase
 .from("payment_methods")
 .select("*");
 
+const { data: companyData, error: companyError } = await supabase
+  .from("company_settings")
+  .select("*")
+  .single();
+
+console.log("COMPANY DATA:", companyData);
+console.log("COMPANY ERROR:", companyError);
+
+setCompanySettings(companyData);
+
 const { data: revenueCategoriesData } =
 await supabase
 .from("Revenue_Category")
@@ -130,6 +163,13 @@ await supabase
       await supabase
         .from("Expense_Category")
         .select("*");
+        const { data: adjustmentsData } = await supabase
+  .from("adjustments")
+  .select("*");
+  const { data: payrollData } = await supabase
+.from("payroll")
+.select("*")
+.order("payroll_month", { ascending: false });
       setEmployees(sortedEmployees);
     setDepartments(departmentsData || []);
     setRevenues(revenuesData || []);
@@ -137,6 +177,8 @@ await supabase
 setRevenueCategories(revenueCategoriesData || []);
 setExpenseCategories(expenseCategoriesData || []);
     setExpenses(expensesData || []);
+    setAdjustments(adjustmentsData || []);
+    setPayrolls(payrollData || []);
   }
 
   const totalRevenue = revenues.reduce(
@@ -358,6 +400,118 @@ setExpenseCategories(expenseCategoriesData || []);
       description: "",
     });
   }
+async function addAdjustment() {
+
+  if (
+    !newAdjustment.employee_id ||
+    !newAdjustment.adjustment_type ||
+    !newAdjustment.amount ||
+    !newAdjustment.reason ||
+    !newAdjustment.start_date
+  ) {
+    alert("Please fill all required fields");
+    return;
+  } 
+  const finalEndDate =
+  newAdjustment.is_recurring
+    ? newAdjustment.end_date
+    : newAdjustment.start_date;
+  const { error } = await supabase
+    .from("adjustments")
+    .insert([
+      {
+        employee_id: newAdjustment.employee_id,
+        adjustment_type: newAdjustment.adjustment_type,
+        amount: Number(newAdjustment.amount),
+        reason: newAdjustment.reason,
+        start_date: newAdjustment.start_date,
+end_date: finalEndDate,
+        is_recurring: newAdjustment.is_recurring,
+      },
+    ]);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadData();
+
+  setShowAddAdjustment(false);
+
+  setNewAdjustment({
+    employee_id: "",
+    adjustment_type: "",
+    amount: "",
+    reason: "",
+    start_date: "",
+    end_date: "",
+    is_recurring: false,
+  });
+}
+async function updateAdjustment() {
+
+if (
+  !newAdjustment.is_recurring &&
+  newAdjustment.start_date
+) {
+  newAdjustment.end_date = newAdjustment.start_date;
+}
+  const { error } = await supabase
+    .from("adjustments")
+    .update({
+      employee_id: newAdjustment.employee_id,
+      adjustment_type: newAdjustment.adjustment_type,
+      amount: newAdjustment.amount,
+      reason: newAdjustment.reason,
+      start_date: newAdjustment.start_date,
+      end_date: newAdjustment.end_date,
+      is_recurring: newAdjustment.is_recurring,
+    })
+    .eq("id", editingAdjustment.id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadData();
+
+  setEditingAdjustment(null);
+
+  setShowAddAdjustment(false);
+
+  setNewAdjustment({
+    employee_id: "",
+    adjustment_type: "",
+    amount: "",
+    reason: "",
+    start_date: "",
+    end_date: "",
+    is_recurring: false,
+  });
+}
+async function deleteAdjustment(id) {
+
+  const confirmDelete =
+    window.confirm(
+      "Are you sure you want to delete this adjustment?"
+    );
+
+  if (!confirmDelete) return;
+
+  const { error } = await supabase
+    .from("adjustments")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadData();
+}
   async function deleteExpense(id, projectName) {
 
     const confirmDelete = window.confirm(
@@ -451,7 +605,7 @@ setExpenseCategories(expenseCategoriesData || []);
       alert(error.message);
       return;
     }
-  
+
     await loadData();
   
     setEditingRevenue(null);
@@ -489,6 +643,126 @@ setExpenseCategories(expenseCategoriesData || []);
   
     await loadData();
   }
+  async function generatePayroll(employeeId, payrollMonth) {
+    const employee = employees.find(emp => emp.id === employeeId);
+  
+    if (!employee) {
+      alert("Employee not found");
+      return;
+    }
+  
+    const payrollMonthKey = payrollMonth;
+
+    const activeAdjustments = adjustments.filter(adj => {
+
+      const startMonth = adj.start_date.slice(0, 7);
+    
+      const endMonth = adj.end_date
+        ? adj.end_date.slice(0, 7)
+        : null;
+    
+      return (
+        adj.employee_id === employeeId &&
+        startMonth <= payrollMonth &&
+        (!endMonth || endMonth >= payrollMonth)
+      );
+    
+    });
+    console.log("ACTIVE:", activeAdjustments);
+  
+    const totalBonus = activeAdjustments
+      .filter(adj => adj.adjustment_type === "Bonus")
+      .reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
+  
+    const totalDeduction = activeAdjustments
+      .filter(adj => adj.adjustment_type === "Deduction")
+      .reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
+  
+    const basicSalary = Number(employee.basic_salary || 0);
+  
+    const netSalary =
+      basicSalary +
+      totalBonus -
+      totalDeduction;
+      const { data: existingPayroll } = await supabase
+      .from("payroll")
+      .select("id")
+      .eq("employee_id", employeeId)
+      .eq("payroll_month", payrollMonth + "-01");
+      if (existingPayroll.length > 0) {
+        alert("Payroll already exists for this employee and month");
+        return;
+      }
+      const { data, error } = await supabase
+      .from("payroll")
+      .insert([
+        {
+          employee_id: employeeId,
+          payroll_month: payrollMonth + "-01",
+          basic_salary: basicSalary,
+          total_bonus: totalBonus,
+          total_deduction: totalDeduction,
+          net_salary: netSalary,
+        },
+      ])
+      .select();
+    
+    console.log("PAYROLL DATA:", data);
+    console.log("PAYROLL ERROR:", error);
+    console.log("Employee ID:", employeeId);
+console.log("Payroll Month:", payrollMonth);
+console.log("All Adjustments:", adjustments);
+console.log("Active Adjustments:", activeAdjustments);
+    
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await supabase
+  .from("expenses")
+  .insert([
+    {
+      amount: netSalary,
+      description: `Salary - ${employee.name}`,
+      expense_date: payrollMonth + "-01",
+      employee_id: employeeId,
+      department_id: employee.department_id,
+      expense_category_id: 2,
+    },
+  ]);
+    loadData();
+  
+    await loadData();
+    setShowAddPayroll(false);
+
+setNewPayroll({
+  employee_id: "",
+  payroll_month: "",
+});
+
+  }
+  async function deletePayroll(id) {
+
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this payroll?"
+    );
+  
+    if (!confirmDelete) return;
+  
+    const { error } = await supabase
+      .from("payroll")
+      .delete()
+      .eq("id", id);
+  
+    if (error) {
+      alert(error.message);
+      return;
+    }
+  
+    await loadData();
+  
+    alert("Payroll deleted successfully");
+  } 
   async function deleteEmployee(id, name) {
 
     const confirmDelete = window.confirm(
@@ -509,6 +783,86 @@ setExpenseCategories(expenseCategoriesData || []);
   
     loadData();
   }
+function exportPayrollPDF(payroll) {
+  const doc = new jsPDF();
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  img.src = companySettings.logo_url;
+  
+  img.onload = () => {
+  
+    const logoWidth = 35;
+    const logoHeight = (img.height * logoWidth) / img.width;
+    doc.addImage(
+      img,
+      "PNG",
+      20,
+      10,
+      logoWidth,
+      logoHeight
+    );
+  
+    doc.setFontSize(20);
+  
+    doc.setFontSize(10);
+    doc.text(`Phone: ${companySettings?.phone || ""}`, 65, 18);
+    doc.text(`Email: ${companySettings?.email || ""}`, 65, 24);
+    doc.text(`Website: ${companySettings?.website || ""}`, 65, 30);
+    doc.text(`Address: ${companySettings?.address || ""}`, 65, 36);
+    doc.setDrawColor(142, 214, 0);
+doc.setLineWidth(0.5);
+doc.line(15, 45, 195, 45);
+doc.setFontSize(22);
+doc.setFont(undefined, "bold");
+doc.text("PAYROLL SLIP", 20, 60);
+doc.setFontSize(11);
+
+doc.text(
+  `Payroll Month: ${payroll.payroll_month?.slice(0,7)}`,
+  135,
+  55
+);
+
+doc.text(
+  `Issue Date: ${new Date().toISOString().split("T")[0]}`,
+  135,
+  62
+);
+  
+    autoTable(doc, {
+      startY: 75,
+      headStyles: {
+        fillColor: [142, 214, 0],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+      },
+      body: [
+        [
+          "Employee Name",
+          employees.find(
+            (emp) => emp.id === payroll.employee_id
+          )?.name || ""
+        ],
+        ["Payroll Month", payroll.payroll_month?.slice(0,7)],
+        ["Basic Salary", payroll.basic_salary],
+        ["Bonus", payroll.total_bonus],
+        ["Deduction", payroll.total_deduction],
+        ["Net Salary", payroll.net_salary],
+      ],
+      columnStyles: {
+        0: {
+          fontStyle: "bold"
+        }
+      },
+    });
+  
+    doc.save(
+      `Payroll-${payroll.payroll_month}.pdf`
+    );
+  
+  };
+
+}
   return (
     <div className="app">
       <aside className="sidebar">
@@ -554,13 +908,26 @@ setExpenseCategories(expenseCategoriesData || []);
   <FaMoneyBillWave />
   <span>Expenses</span>
 </li>
+<li
+  className={activePage === "adjustments" ? "active" : ""}
+  onClick={() => setActivePage("adjustments")}
+>
+  <FaGift />
+  <span>Adjustments</span>
+</li>
 
-<li>
+<li
+  className={activePage === "payroll" ? "active" : ""}
+  onClick={() => setActivePage("payroll")}
+>
   <FaCreditCard />
   <span>Payroll</span>
 </li>
 
-<li>
+<li
+  className={activePage === "reports" ? "active" : ""}
+  onClick={() => setActivePage("reports")}
+>
   <FaChartBar />
   <span>Reports</span>
 </li>
@@ -1340,6 +1707,415 @@ value={newRevenue.Revenue_Category_id}
 )}
 
 </>
+)}
+{showAddAdjustment && (
+<div className="modal-overlay">
+  <div className="modal">
+
+    <h2>
+      {editingAdjustment ? "Edit Adjustment" : "Add Adjustment"}
+    </h2>
+
+    <select
+      value={newAdjustment.employee_id}
+      onChange={(e) =>
+        setNewAdjustment({
+          ...newAdjustment,
+          employee_id: e.target.value,
+        })
+      }
+    >
+      <option value="">Select Employee</option>
+
+      {employees.map((emp) => (
+        <option key={emp.id} value={emp.id}>
+          {emp.name}
+        </option>
+      ))}
+    </select>
+
+    <select
+      value={newAdjustment.adjustment_type}
+      onChange={(e) =>
+        setNewAdjustment({
+          ...newAdjustment,
+          adjustment_type: e.target.value,
+        })
+      }
+    >
+      <option value="">Select Type</option>
+      <option value="Bonus">Bonus</option>
+      <option value="Deduction">Deduction</option>
+    </select>
+
+    <input
+      type="number"
+      placeholder="Amount"
+      value={newAdjustment.amount}
+      onChange={(e) =>
+        setNewAdjustment({
+          ...newAdjustment,
+          amount: e.target.value,
+        })
+      }
+    />
+
+    <input
+      type="text"
+      placeholder="Reason"
+      value={newAdjustment.reason}
+      onChange={(e) =>
+        setNewAdjustment({
+          ...newAdjustment,
+          reason: e.target.value,
+        })
+      }
+    />
+
+<label>Start Date</label>
+
+<input
+  type="date"
+  value={newAdjustment.start_date}
+  onChange={(e) =>
+    setNewAdjustment({
+      ...newAdjustment,
+      start_date: e.target.value,
+    })
+  }
+/>
+{newAdjustment.is_recurring && (
+  <>
+    <label>End Date</label>
+
+    <input
+      type="date"
+      value={newAdjustment.end_date}
+      onChange={(e) =>
+        setNewAdjustment({
+          ...newAdjustment,
+          end_date: e.target.value,
+        })
+      }
+    />
+  </>
+)}
+
+<div className="checkbox-row">
+
+  <input
+    type="checkbox"
+    checked={newAdjustment.is_recurring}
+    onChange={(e) =>
+      setNewAdjustment({
+        ...newAdjustment,
+        is_recurring: e.target.checked,
+      })
+    }
+  />
+
+  <span>Recurring</span>
+
+</div>
+
+<div className="adjustment-actions">
+
+<button
+  className="save-btn"
+  onClick={() => {
+    if (editingAdjustment) {
+      updateAdjustment();
+    } else {
+      addAdjustment();
+    }
+  }}
+>
+  Save
+</button>
+
+<button
+  className="cancel-btn"
+  onClick={() => {
+    setEditingAdjustment(null);
+
+    setShowAddAdjustment(false);
+
+    setNewAdjustment({
+      employee_id: "",
+      adjustment_type: "",
+      amount: "",
+      reason: "",
+      start_date: "",
+      end_date: "",
+      is_recurring: false,
+    });
+  }}
+>
+  Cancel
+</button>
+</div>
+
+  </div>
+</div>
+)}
+{activePage === "adjustments" && (
+<>
+  <div className="header employees-header">
+
+    <h1>Adjustments Management</h1>
+
+    <button
+      className="add-btn"
+      onClick={() => setShowAddAdjustment(true)}
+    >
+      + Add Adjustment
+    </button>
+
+  </div>
+
+  <div className="table-container">
+
+    <table>
+
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Type</th>
+          <th>Amount</th>
+          <th>Reason</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+
+        {adjustments.map((adj) => (
+          <tr key={adj.id}>
+
+<td>
+  {
+    employees.find(
+      (emp) => emp.id === adj.employee_id
+    )?.name
+  }
+</td>
+
+            <td>{adj.adjustment_type}</td>
+
+            <td>{adj.amount}</td>
+
+            <td>{adj.reason}</td>
+<td>
+
+  <button
+    onClick={() => {
+      setEditingAdjustment(adj);
+
+      setNewAdjustment({
+        employee_id: adj.employee_id,
+        adjustment_type: adj.adjustment_type,
+        amount: adj.amount,
+        reason: adj.reason,
+        start_date: adj.start_date,
+        end_date: adj.end_date,
+        is_recurring: adj.is_recurring,
+      });
+
+      setShowAddAdjustment(true);
+    }}
+  >
+    Edit
+  </button>
+
+  <button
+    onClick={() => deleteAdjustment(adj.id)}
+  >
+    Delete
+  </button>
+
+</td>            
+
+          </tr>
+        ))}
+
+      </tbody>
+
+    </table>
+
+  </div>
+</>
+)}
+{activePage === "payroll" && (
+<>
+  <div className="header employees-header">
+
+    <h1>Payroll Management</h1>
+
+    <button
+  className="add-btn"
+  onClick={() => setShowAddPayroll(true)}
+>
+  + Generate Payroll
+</button>
+  </div>
+
+  <div className="table-container">
+
+    <table>
+
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Month</th>
+          <th>Basic Salary</th>
+          <th>Bonus</th>
+          <th>Deduction</th>
+          <th>Net Salary</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+
+        {payrolls.map((payroll) => (
+          <tr key={payroll.id}>
+
+            <td>
+              {
+                employees.find(
+                  (emp) => emp.id === payroll.employee_id
+                )?.name
+              }
+            </td>
+
+            <td>{payroll.payroll_month}</td>
+
+            <td>{payroll.basic_salary}</td>
+
+            <td>{payroll.total_bonus}</td>
+
+            <td>{payroll.total_deduction}</td>
+
+            <td>{payroll.net_salary}</td>
+<td>
+  <button
+    onClick={() => exportPayrollPDF(payroll)}
+    style={{ marginRight: "10px" }}
+  >
+    PDF
+  </button>
+
+  <button
+    onClick={() => deletePayroll(payroll.id)}
+  >
+    Delete
+  </button>
+</td>
+
+          </tr>
+        ))}
+
+      </tbody>
+
+    </table>
+
+  </div>
+  {showAddPayroll && (
+  <div className="modal-overlay">
+    <div className="modal">
+
+      <h2>Generate Payroll</h2>
+
+      <select
+        value={newPayroll.employee_id}
+        onChange={(e) =>
+          setNewPayroll({
+            ...newPayroll,
+            employee_id: e.target.value,
+          })
+        }
+      >
+        <option value="">
+          Select Employee
+        </option>
+
+        {employees.map((emp) => (
+          <option
+            key={emp.id}
+            value={emp.id}
+          >
+            {emp.name}
+          </option>
+        ))}
+      </select>
+
+      <label>Payroll Month</label>
+
+      <input
+        type="month"
+        value={newPayroll.payroll_month}
+        onChange={(e) =>
+          setNewPayroll({
+            ...newPayroll,
+            payroll_month: e.target.value,
+          })
+        }
+      />
+
+      <div className="adjustment-actions">
+
+        <button
+          className="save-btn"
+          onClick={() =>
+            generatePayroll(
+              newPayroll.employee_id,
+              newPayroll.payroll_month
+            )
+          }
+        >
+          Generate
+        </button>
+
+        <button
+          className="cancel-btn"
+          onClick={() =>
+            setShowAddPayroll(false)
+          }
+        >
+          Cancel
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+)}
+</>
+)}
+{activePage === "reports" && (
+  <div className="employees-page">
+
+    <div className="header employees-header">
+      <h1>Financial Reports</h1>
+    </div>
+
+    <div
+      style={{
+        background: "#0f172a",
+        padding: "30px",
+        borderRadius: "12px",
+        color: "white",
+      }}
+    >
+      <h2>Reports Module</h2>
+
+      <p>
+        Financial Reports Screen Working Successfully
+      </p>
+
+    </div>
+
+  </div>
 )}
 
       {activePage === "dashboard" && (
