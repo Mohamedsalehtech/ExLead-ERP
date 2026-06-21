@@ -18,7 +18,11 @@ export default function Layout({ children }) {
             borderRight: "1px solid #1e293b",
           }}
         >
-          <h2 style={{ color: "#7CFC00" }}>EXLEAD ERP</h2>
+          <img
+  src="/logo.png"
+  alt="ExLead Logo"
+  className="sidebar-logo"
+/>
   
           <div style={{ marginTop: "40px" }}>
             <p>🏠 Dashboard</p>

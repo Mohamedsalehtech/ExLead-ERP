@@ -166,36 +166,48 @@ body{
 .kpis{
   display:grid;
   grid-template-columns:repeat(6,1fr);
-  gap:10px;
+  gap:15px;
+  margin-bottom:20px;
 }
 .kpi{
+  position: relative;
   background:#84CC16;
   border-radius:20px;
-  padding:20px;
+  padding:25px;
   text-align:center;
   box-shadow:0 10px 25px rgba(0,0,0,.25);
+  overflow:hidden;
 }
-
+.kpi-icon{
+  position:absolute;
+  top:18px;
+  left:18px;
+  font-size:38px;
+  color:rgba(17,24,39,.35);
+}
 .kpi span{
   display:block;
-  font-size:14px;
+  font-size:17px;
   font-weight:600;
-  color:#111827;
-  margin-bottom:10px;
+  color:rgba(17,24,39,.7);
+  letter-spacing:.3px;
 }
 
 .kpi h2{
-  font-size:32px;
-  font-weight:700;
-  margin-top:10px;
-  color:#111827;
+  font-size:26px;
+  font-weight:800;
+  color:#404040;
 }
-
+.kpi{
+  position:relative;
+  padding:25px;
+  text-align:center;
+}
 /* Dashboard Grid */
 
 .dashboard-grid{
   display:grid;
-  grid-template-columns:2fr 1fr;
+  grid-template-columns:1fr 1fr;
   gap:20px;
   width:100%;
 }
@@ -313,17 +325,27 @@ tr:hover{
 }
 .charts-grid{
   display:grid;
-  grid-template-columns:2fr 1fr;
+  grid-template-columns:1fr 1fr;
   gap:20px;
   margin-top:20px;
 }
 
 .chart-panel{
-  background:#111827;
+  background:#081529;
   border-radius:20px;
-  padding:20px;
-  border:1px solid #1E293B;
-  box-shadow:0 4px 20px rgba(0,0,0,.25);
+  padding:25px;
+  border:1px solid rgba(139,224,0,.15);
+
+  box-shadow:
+  0 0 25px rgba(139,224,0,.08);
+
+}
+
+.chart-subtitle{
+  color:#94A3B8;
+  font-size:14px;
+  margin-top:-10px;
+  margin-bottom:20px;
 }
 
 .chart-title{
@@ -353,7 +375,7 @@ tr:hover{
 .dashboard-grid{
   margin-top:20px;
   display:grid;
-  grid-template-columns:2fr 1fr;
+  grid-template-columns:1fr 1fr;
   gap:20px;
 }
 .menu li svg{
@@ -416,6 +438,31 @@ tr:hover{
   padding:15px;
   border-bottom:1px solid #374151;
 }
+.employees-table td {
+  vertical-align: middle;
+}
+.employees-table tbody tr {
+  height: 70px;
+}
+.employees-table td:nth-child(8),
+.employees-table th:nth-child(8) {
+  text-align: center;
+}
+.actions-cell {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+}
+
+.actions-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
 .modal-overlay{
   position:fixed;
   inset:0;
@@ -489,7 +536,7 @@ tr:hover{
 .modal-actions{
   display:flex;
   gap:10px;
-  justify-content:flex-end;
+  justify-content:center;
 }
 .modal input,
 .modal select {
@@ -537,16 +584,33 @@ td button:hover {
   background: #a5f01c;
 }
 .save-btn{
-  background:#8dd313;
-  color:#000;
-  font-weight:700;
+  background:#84CC16;
+  color:#020617;
   border:none;
-  cursor:pointer;
-}
-.cancel-btn{
-  background:#dc3545;
-  color:#fff;
+  padding:12px 20px;
+  border-radius:10px;
   font-weight:700;
+  cursor:pointer;
+  font-size:14px;
+}
+
+.save-btn:hover{
+  opacity:.9;
+}
+
+.cancel-btn{
+  background:#EF4444;
+  color:#fff;
+  border:none;
+  padding:12px 20px;
+  border-radius:10px;
+  font-weight:700;
+  cursor:pointer;
+  font-size:14px;
+}
+
+.cancel-btn:hover{
+  opacity:.9;
 }
 .checkbox-row{
   display:flex;
@@ -559,18 +623,103 @@ td button:hover {
   width:18px;
   height:18px;
 }
-.adjustment-actions{
+.trend-row{
   display:flex;
-  gap:15px;
-  margin-top:20px;
+  gap:20px;
+  margin:20px 0;
 }
 
-.adjustment-actions button{
+.chart-card{
   flex:1;
-  height:55px;
-  font-size:20px;
+  background:#07142D;
+  border:1px solid #1f3b5c;
+  border-radius:20px;
+  padding:20px;
+  min-height:350px;
+}
+
+.chart-card h2{
+  text-align:center;
+  color:#84CC16;
+  margin-bottom:20px;
+}
+.year-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  padding: 12px 20px;
+}
+
+.year-filter label {
+  color: #8bd311;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.year-filter select {
+  background: #3f3f3f;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 18px;
+  min-width: 140px;
+  cursor: pointer;
+}
+.sidebar-logo{
+  width: 180px;
+  display: block;
+  margin: 15px auto 25px;
+  object-fit: contain;
+}
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.edit-btn,
+.delete-btn {
+  background: #84cc16;
+  border: none;
+  color: #000;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.edit-btn:hover,
+.delete-btn:hover {
+  opacity: 0.9;
+}
+.actions-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+.header-right{
+  display:flex;
+  align-items:center;
+  gap:18px;
+}
+
+.year-filter{
+  background:#07152d;
+  color:#8BE000;
+  border:1px solid #1f3b63;
+  border-radius:10px;
+
+  height:70px;
+  min-width:180px;
+
+  padding:0 18px;
+
+  font-size:18px;
   font-weight:700;
-  border:none;
-  border-radius:8px;
+
   cursor:pointer;
 }

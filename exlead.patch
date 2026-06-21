@@ -1,0 +1,591 @@
+From 8808afa7eb1eb4eca99772f5c0c983bf35ea54da Mon Sep 17 00:00:00 2001
+From: mohamed Saleh <mohamedsaleh@192.168.1.5>
+Date: Tue, 9 Jun 2026 23:22:45 +0300
+Subject: [PATCH] Monthly Targets Management progress
+
+---
+ src/App.jsx | 453 +++++++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 429 insertions(+), 24 deletions(-)
+
+diff --git a/src/App.jsx b/src/App.jsx
+index 20802c3..fa08fe3 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -32,12 +32,14 @@ function App() {
+   const [expenseCategories, setExpenseCategories] = useState([]);
+   const [expenses, setExpenses] = useState([]);
+   const [adjustments, setAdjustments] = useState([]);
++  const [reportFrom, setReportFrom] = useState("");
++const [reportTo, setReportTo] = useState("");
+   const [currentTime, setCurrentTime] = useState(new Date());
+   const [activePage, setActivePage] = useState("dashboard");
+   const [showAddEmployee, setShowAddEmployee] = useState(false);
+   const [editingEmployee, setEditingEmployee] = useState(null);
+   const [showAddDepartment, setShowAddDepartment] = useState(false);
+-
++  const [monthlyTargets, setMonthlyTargets] = useState([]);
+ const [newDepartment, setNewDepartment] = useState({
+   department_name: "",
+ });
+@@ -140,6 +142,10 @@ await supabase
+ .from("payment_methods")
+ .select("*");
+ 
++const { data: monthlyTargetsData } = await supabase
++  .from("monthly_targets")
++  .select("*");
++  console.log("MONTHLY TARGETS:", monthlyTargetsData);
+ const { data: companyData, error: companyError } = await supabase
+   .from("company_settings")
+   .select("*")
+@@ -166,6 +172,7 @@ await supabase
+         const { data: adjustmentsData } = await supabase
+   .from("adjustments")
+   .select("*");
++  
+   const { data: payrollData } = await supabase
+ .from("payroll")
+ .select("*")
+@@ -197,10 +204,22 @@ setExpenseCategories(expenseCategoriesData || []);
+     amount: Number(item.amount)
+   }));
+   
+-  const expenseChartData = expenses.map(item => ({
+-    name: item.project_name,
+-    amount: Number(item.amount)
+-  }));
++  const expenseChartData = Object.values(
++    expenses.reduce((acc, item) => {
++      const project = item.project_name || "Unknown";
++  
++      if (!acc[project]) {
++        acc[project] = {
++          name: project,
++          amount: 0,
++        };
++      }
++  
++      acc[project].amount += Number(item.amount || 0);
++  
++      return acc;
++    }, {})
++  );
+   async function addEmployee() {
+ 
+     const { error } = await supabase
+@@ -611,6 +630,7 @@ async function deleteAdjustment(id) {
+     setEditingRevenue(null);
+   
+     setShowAddRevenue(false);
++    setMonthlyTargets(monthlyTargetsData || []);
+   
+     setNewRevenue({
+       project_name: "",
+@@ -720,6 +740,17 @@ console.log("Active Adjustments:", activeAdjustments);
+     }
+     await supabase
+   .from("expenses")
++  .insert([
++    {
++      expense_category_id: 2, // Payroll
++      payment_method_id: 2,   // Bank Transfer
++      amount: netSalary,
++      expense_date: payrollMonth + "-01",
++      project_name: "Monthly Salaries",
++    },
++  ]);
++    await supabase
++  .from("expenses")
+   .insert([
+     {
+       amount: netSalary,
+@@ -861,8 +892,79 @@ doc.text(
+     );
+   
+   };
+-
++ 
+ }
++const filteredRevenues = revenues.filter(
++  (item) =>
++    (!reportFrom || item.revenue_date >= reportFrom) &&
++    (!reportTo || item.revenue_date <= reportTo)
++);
++
++const reportTotalRevenue = filteredRevenues.reduce(
++  (sum, item) => sum + Number(item.amount || 0),
++  0
++);
++
++const filteredExpenses = expenses.filter(
++  (item) =>
++    (!reportFrom || item.expense_date >= reportFrom) &&
++    (!reportTo || item.expense_date <= reportTo)
++);
++
++const reportTotalExpenses = filteredExpenses.reduce(
++  (sum, item) => sum + Number(item.amount || 0),
++  0
++);
++const filteredPayrolls = payrolls.filter(
++  (item) =>
++    (!reportFrom || item.payroll_month >= reportFrom) &&
++    (!reportTo || item.payroll_month <= reportTo)
++);
++
++const reportPayrollExpenses = filteredPayrolls.reduce(
++  (sum, item) => sum + Number(item.net_salary || 0),
++  0
++);
++const reportNetProfit =
++  reportTotalRevenue -
++  reportTotalExpenses;
++  const departmentAnalysis = departments.map((dept) => {
++
++    const deptRevenue = revenues
++      .filter((r) => r.department_id === dept.id)
++      .reduce((sum, r) => sum + Number(r.amount || 0), 0);
++  
++    const deptExpenses = expenses
++      .filter(
++        (e) =>
++          e.department_id === dept.id &&
++          e.project_name !== "Monthly Salaries"
++      )
++      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
++  
++    const deptPayroll = payrolls
++      .filter((p) => {
++        const emp = employees.find(
++          (e) => e.id === p.employee_id
++        );
++  
++        return emp?.department_id === dept.id;
++      })
++      .reduce((sum, p) => sum + Number(p.net_salary || 0), 0);
++  
++    return {
++      department: dept.department_name,
++      revenue: deptRevenue,
++      expenses: deptExpenses,
++      payroll: deptPayroll,
++      totalCost: deptExpenses + deptPayroll,
++      profit: deptRevenue - deptExpenses - deptPayroll,
++      profitMargin:
++deptRevenue > 0
++  ? ((deptRevenue - deptExpenses - deptPayroll) / deptRevenue) * 100
++  : 0
++    };
++  });
+   return (
+     <div className="app">
+       <aside className="sidebar">
+@@ -923,6 +1025,13 @@ doc.text(
+   <FaCreditCard />
+   <span>Payroll</span>
+ </li>
++<li
++  className={activePage === "monthlyTargets" ? "active" : ""}
++  onClick={() => setActivePage("monthlyTargets")}
++>
++  <FaChartBar />
++  <span>monthly TGT</span>
++</li>
+ 
+ <li
+   className={activePage === "reports" ? "active" : ""}
+@@ -932,6 +1041,7 @@ doc.text(
+   <span>Reports</span>
+ </li>
+ 
++
+ <li>
+   <FaCog />
+   <span>Settings</span>
+@@ -1945,10 +2055,84 @@ value={newRevenue.Revenue_Category_id}
+   </div>
+ </>
+ )}
+-{activePage === "payroll" && (
++{activePage === "monthlyTargets" && (
+ <>
+   <div className="header employees-header">
+ 
++    <h1>Monthly Targets Management</h1>
++
++    <button
++      className="add-btn"
++      onClick={() => setShowAddTarget(true)}
++    >
++      + Add Target
++    </button>
++
++  </div>
++
++  <div className="table-container">
++
++    <table>
++
++      <thead>
++        <tr>
++          <th>Department</th>
++          <th>Month</th>
++          <th>Year</th>
++          <th>Target Amount</th>
++          <tbody>
++
++{monthlyTargets.map((target) => (
++  <tr key={target.id}>
++
++    <td>
++      {
++        departments.find(
++          (dep) => dep.id === target.department_id
++        )?.department_name
++      }
++    </td>
++
++    <td>{target.target_month}</td>
++
++    <td>{target.target_year}</td>
++
++    <td>
++      {Number(target.target_amount).toLocaleString()}
++    </td>
++
++    <td>
++      OK
++    </td>
++
++  </tr>
++))}
++
++</tbody>
++
++          <th>Actions</th>
++        </tr>
++      </thead>
++
++
++
++    </table>
++
++  </div>
++</>
++)}
++
++{activePage === "payroll" && (
++<>
++<div
++  className="header employees-header"
++  style={{
++    display: "flex",
++    justifyContent: "space-between",
++    alignItems: "center",
++    marginBottom: "20px"
++  }}
++>
+     <h1>Payroll Management</h1>
+ 
+     <button
+@@ -2099,19 +2283,222 @@ value={newRevenue.Revenue_Category_id}
+       <h1>Financial Reports</h1>
+     </div>
+ 
+-    <div
+-      style={{
+-        background: "#0f172a",
+-        padding: "30px",
+-        borderRadius: "12px",
+-        color: "white",
+-      }}
+-    >
+-      <h2>Reports Module</h2>
++    <div className="card">
+ 
+-      <p>
+-        Financial Reports Screen Working Successfully
+-      </p>
++      <div
++        style={{
++          display: "flex",
++          gap: "15px",
++          marginBottom: "20px",
++        }}
++      >
++        <input
++          type="date"
++          value={reportFrom}
++          onChange={(e) => setReportFrom(e.target.value)}
++        />
++
++        <input
++          type="date"
++          value={reportTo}
++          onChange={(e) => setReportTo(e.target.value)}
++        />
++      </div>
++
++      <h3>
++  Total Revenue: {reportTotalRevenue.toLocaleString()}
++</h3>
++
++<h3>
++  Total Expenses: {reportTotalExpenses.toLocaleString()}
++</h3>
++
++<h3>
++  Payroll Expenses: {reportPayrollExpenses.toLocaleString()}
++</h3>
++
++<h3>
++  Net Profit: {reportNetProfit.toLocaleString()}
++</h3>
++<h2 style={{ marginTop: "30px" }}>
++  Revenue Details
++</h2>
++
++<table>
++  <thead>
++  <tr>
++  <th>Date</th>
++<th>Project</th>
++<th>Category</th>
++<th>Payment Method</th>
++<th>Department</th>
++<th>Employee</th>
++<th>Amount</th>
++</tr>
++  </thead>
++
++  <tbody>
++    {filteredRevenues.map((item) => (
++      <tr key={item.id}>
++  <td>{item.revenue_date}</td>
++
++  <td>{item.project_name}</td>
++
++  <td>
++    {
++      revenueCategories.find(
++        (cat) =>
++          Number(cat.id) === Number(item.Revenue_Category_id)
++      )?.revenue_categories
++    }
++  </td>
++  <td>
++{
++  paymentMethods.find(
++    (pm) => Number(pm.id) === Number(item.payment_method_id)
++  )?.method_name
++}
++</td>
++<td>
++{
++  departments.find(
++    (dep) => dep.id === item.department_id
++  )?.department_name
++}
++</td>
++<td>
++{
++  employees.find(
++    (emp) => emp.id === item.employee_id
++  )?.name
++}
++</td>
++
++  <td>
++    {Number(item.amount).toLocaleString()}
++  </td>
++</tr>
++    ))}
++  </tbody>
++</table>
++<h2 style={{ marginTop: "30px" }}>
++  Expense Details
++</h2>
++
++<table>
++  <thead>
++    <tr>
++    <th>Date</th>
++<th>Project</th>
++<th>Category</th>
++<th>Payment Method</th>
++<th>Department</th>
++<th>Employee</th>
++<th>Amount</th>
++    </tr>
++  </thead>
++
++  <tbody>
++    {filteredExpenses.map((item) => (
++      <tr key={item.id}>
++<td>{item.expense_date}</td>
++
++<td>{item.project_name}</td>
++
++<td>
++{
++  expenseCategories.find(
++    (cat) => Number(cat.id) === Number(item.expense_category_id)
++  )?.expense_categories
++}
++</td>
++
++<td>
++{
++  paymentMethods.find(
++    (pm) => Number(pm.id) === Number(item.payment_method_id)
++  )?.method_name
++}
++</td>
++
++<td>
++{
++  item.project_name === "Monthly Salaries"
++    ? "All Departments"
++    : departments.find(
++        (dep) => dep.id === item.department_id
++      )?.department_name
++}
++</td>
++
++<td>
++{
++  item.project_name === "Monthly Salaries"
++    ? "Company Payroll"
++    : employees.find(
++        (emp) => emp.id === item.employee_id
++      )?.name
++}
++</td>
++
++<td>
++  {Number(item.amount).toLocaleString()}
++</td>
++
++      </tr>
++    ))}
++  </tbody>
++</table>
++<h2 style={{ marginTop: "40px" }}>
++  Department Cost Analysis
++</h2>
++
++<table>
++<thead>
++  <tr>
++    <th>Department</th>
++    <th>Revenue</th>
++    <th>Expenses</th>
++    <th>Payroll</th>
++    <th>Total Cost</th>
++    <th>Net Profit</th>
++    <th>Profit %</th>
++  </tr>
++</thead>
++
++  <tbody>
++    {departmentAnalysis.map((item) => (
++      <tr key={item.department}>
++        <td>{item.department}</td>
++
++        <td>
++          {item.revenue.toLocaleString()}
++        </td>
++
++        <td>
++          {item.expenses.toLocaleString()}
++        </td>
++
++        <td>
++          {item.payroll.toLocaleString()}
++        </td>
++
++        <td>
++          {item.totalCost.toLocaleString()}
++        </td>
++
++        <td>
++          {item.profit.toLocaleString()}
++        </td>
++
++        <td>
++  {item.profitMargin.toFixed(1)}%
++</td>
++
++      </tr>
++    ))}
++  </tbody>
++</table>
+ 
+     </div>
+ 
+@@ -2147,9 +2534,13 @@ value={newRevenue.Revenue_Category_id}
+           </div>
+ 
+           <div className="kpi">
+-            <span>Departments</span>
+-            <h2>{departments.length}</h2>
+-          </div>
++  <span>Payroll</span>
++  <h2>
++    {payrolls
++      .reduce((sum, item) => sum + Number(item.net_salary || 0), 0)
++      .toLocaleString()}
++  </h2>
++</div>
+ 
+           <div className="kpi">
+             <span>Revenue</span>
+@@ -2180,7 +2571,13 @@ value={newRevenue.Revenue_Category_id}
+     <ResponsiveContainer width="100%" height={320}>
+       <BarChart data={revenueChartData}>
+         <CartesianGrid strokeDasharray="3 3" />
+-        <XAxis dataKey="name" />
++        <XAxis
++  dataKey="name"
++  interval={0}
++  angle={-20}
++  textAnchor="end"
++  height={70}
++/>
+         <YAxis />
+         <Tooltip />
+         <Bar dataKey="amount" fill="#84CC16" />
+@@ -2194,7 +2591,13 @@ value={newRevenue.Revenue_Category_id}
+     <ResponsiveContainer width="100%" height={320}>
+       <BarChart data={expenseChartData}>
+         <CartesianGrid strokeDasharray="3 3" />
+-        <XAxis dataKey="name" />
++        <XAxis
++  dataKey="name"
++  interval={0}
++  angle={-20}
++  textAnchor="end"
++  height={70}
++/>
+         <YAxis />
+         <Tooltip />
+         <Bar dataKey="amount" fill="#EF4444" />
+@@ -2226,6 +2629,7 @@ value={newRevenue.Revenue_Category_id}
+                 ))}
+               </tbody>
+             </table>
++            
+           </div>
+ 
+           <div className="panel">
+@@ -2261,6 +2665,7 @@ value={newRevenue.Revenue_Category_id}
+                 </tr>
+               </thead>
+ 
++              
+               <tbody>
+                 {employees.map((emp) => (
+                   <tr key={emp.id}>
+-- 
+2.39.5 (Apple Git-154)
+
