@@ -4,11 +4,17 @@ import "./App.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logo from "./assets/logo.png";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+
 
 import {
   FaHome,
   FaUsers,
   FaBuilding,
+  FaChevronDown,
+  FaDownload,
   FaMoneyBillWave,
   FaMoneyCheckAlt,
   FaFileInvoiceDollar,
@@ -16,6 +22,9 @@ import {
   FaCreditCard,
   FaChartBar,
   FaChartLine,
+  FaFileExcel,
+  FaFilePdf,
+  FaPrint,
   FaHandshake,
   FaUserTie,
   FaWallet,
@@ -23,8 +32,11 @@ import {
   FaProjectDiagram,
   FaCog,
   FaBullseye,
+  FaWarehouse,
+  FaBalanceScale,
   FaGift
 } from "react-icons/fa";
+
 import {
   ResponsiveContainer,
   BarChart,
@@ -37,6 +49,9 @@ import {
   LabelList,
   PieChart,
   Pie,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
   Legend,
   LineChart,
   Line,
@@ -115,6 +130,7 @@ const [newExpense, setNewExpense] = useState({
     department_id: "",
     basic_salary: "",
     hire_date: "",
+    salary_effective_from: "",
   });
 const [payrolls, setPayrolls] = useState([]);
 const [companySettings, setCompanySettings] = useState(null);
@@ -210,15 +226,22 @@ const [targetAmount, setTargetAmount] = useState("");
   
   }, []);
 
+  const [selectedReport, setSelectedReport] = useState("Executive Summary"); 
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
 async function loadData() {
-const { data: employeesData } = await supabase
-    .from("employees")
-    .select(`
-      *,
-      departments (
-        department_name
-      )
-    `);
+  const { data: employeesData } = await supabase
+  .from("employees")
+  .select(`
+    *,
+    departments (
+      department_name
+    ),
+    salary_history (
+      salary_amount,
+      effective_from
+    )
+  `);
 const sortedEmployees = (employeesData || []).sort((a, b) => {
       if (a.name === "Mohamed Saleh") return -1;
       if (b.name === "Mohamed Saleh") return 1;
@@ -473,14 +496,14 @@ const totalPayroll = payrolls
 const netProfit =
   totalRevenue -
   totalExpenses;
-  const DEPARTMENT_COLORS = [
-    "#8BE000", // Lime Green
-    "#FF00E5", // Magenta
-    "#BFBFBF", // Silver
-    "#FFA500",
-    "#D100FF",
-    "#E0E0E0",
-  ];
+  const DEPARTMENT_COLORS = {
+    Training: "#84CC16",
+    Marketing: "#FF00D4",
+    Administration: "#D9D9D9",
+    Programming: "#F59E0B",
+    Freelancing: "#3B82F6",
+    Licenses: "#EF4444",
+  };
   const revenueChartData = departments.map((dep) => {
 
     const total = revenues
@@ -512,6 +535,14 @@ const netProfit =
   const totalRevenueValue = revenueChartData.reduce(
     (sum, item) => sum + item.amount,
     0
+  );
+  const [showReceivePayment, setShowReceivePayment] = useState(false);
+
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
+  const [selectedPaymentDate, setSelectedPaymentDate] = useState(
+    new Date().toISOString().split("T")[0]
   );
   
   const availableYears = [
@@ -579,9 +610,59 @@ const netProfit =
       };
     
     });
+    
+    
   
+    const monthNames = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+    const monthlyFinancialData = Array.from({ length: 12 }, (_, i) => {
+      const month = monthNames[i];
+    
+      const revenue = revenues
+  .filter((r) => {
+    const date = new Date(r.revenue_date);
 
+    return (
+      date.getMonth() === i &&
+      (selectedYear === "All" ||
+        date.getFullYear() === Number(selectedYear))
+    );
+  })
+  .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    
+  const expensesTotal = expenses
+  .filter((e) => {
+    const date = new Date(e.expense_date);
 
+    return (
+      date.getMonth() === i &&
+      (selectedYear === "All" ||
+        date.getFullYear() === Number(selectedYear))
+    );
+  })
+  .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    
+  
+    
+  return {
+    month,
+    revenue,
+    expenses: expensesTotal,
+    profit: revenue - expensesTotal,
+  };
+    });
 
       const expenseChartData = departments.map((dep) => {
 
@@ -666,6 +747,7 @@ const netProfit =
       console.log(error);
       alert(error.message);
     }
+   
   
     await loadData();
   
@@ -868,6 +950,14 @@ const deleteProjectPayment = async (id) => {
       alert("Error Saving Client");
       return;
     }
+    const departmentColors = {
+      Training: "#84CC16",
+      Marketing: "#FF00D4",
+      Administration: "#D9D9D9",
+      Programming: "#FFB300",
+      Sales: "#3B82F6",
+      HR: "#EF4444",
+    };
   
     await loadData();
   
@@ -1059,6 +1149,7 @@ const deleteProjectPayment = async (id) => {
   }
 
   async function updateEmployee() {
+    const oldSalary = editingEmployee.basic_salary;
     const { error } = await supabase
       .from("employees")
       .update({
@@ -1075,6 +1166,16 @@ const deleteProjectPayment = async (id) => {
     if (error) {
       alert(error.message);
       return;
+    }
+    if (Number(oldSalary) !== Number(newEmployee.basic_salary)) {
+      await supabase
+        .from("salary_history")
+        .insert({
+          employee_id: editingEmployee.id,
+          salary_amount: Number(newEmployee.basic_salary),
+          effective_from: newEmployee.salary_effective_from,
+          notes: "Salary Updated",
+        });
     }
   
     await loadData();
@@ -1724,15 +1825,84 @@ const filteredPayrolls = payrolls.filter(
     (!reportFrom || item.payroll_month >= reportFrom) &&
     (!reportTo || item.payroll_month <= reportTo)
 );
+function exportToExcel() {
 
-const markPaymentAsPaid = async (payment) => {
+  let data = [];
+  let fileName = "Report";
+
+  switch (selectedReport) {
+    case "Revenue Report":
+      fileName = "Revenue Report";
+
+      data = filteredRevenues.map((item) => ({
+        Date: item.revenue_date,
+        Project: item.project_name,
+        Category:
+          revenueCategories.find(
+            (c) => Number(c.id) === Number(item.Revenue_Category_id)
+          )?.revenue_categories || "",
+
+        PaymentMethod:
+          paymentMethods.find(
+            (p) => Number(p.id) === Number(item.payment_method_id)
+          )?.method_name || "",
+
+        Department:
+          departments.find(
+            (d) => Number(d.id) === Number(item.department_id)
+          )?.department_name || "",
+
+        Employee:
+          employees.find(
+            (e) => Number(e.id) === Number(item.employee_id)
+          )?.name || "",
+
+        Amount: item.amount,
+      }));
+
+      break;
+
+    default:
+      alert("Excel Export is not available for this report yet.");
+      return;
+  }
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "Report"
+  );
+
+  const excelBuffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const file = new Blob([excelBuffer], {
+    type:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8",
+  });
+
+  saveAs(file, `${fileName}.xlsx`);
+}
+
+const markPaymentAsPaid = async (
+  payment,
+  paymentMethodId,
+  paymentDate
+) => {
   try {
 
     const { error: paymentError } = await supabase
       .from("project_payments")
       .update({
         status: "Paid",
-        payment_date: new Date().toISOString().split("T")[0],
+        payment_date: paymentDate,
+        payment_method_id: Number(paymentMethodId),
       })
       .eq("id", payment.id);
 
@@ -1748,14 +1918,13 @@ const markPaymentAsPaid = async (payment) => {
         .insert([
           {
             amount: payment.amount,
-            revenue_date: new Date().toISOString().split("T")[0],
+            revenue_date: paymentDate,
             project_name: project.project_name,
             department_id: project.department_id,
             employee_id: project.project_manager_id,
-            Revenue_Category_id:
-              project.revenue_category_id,
-            Description:
-              `Project Payment - ${project.project_name}`,
+            Revenue_Category_id: project.revenue_category_id,
+            payment_method_id: Number(paymentMethodId),
+            Description: `Project Payment - ${project.project_name}`,
           },
         ]);
 
@@ -1764,7 +1933,16 @@ const markPaymentAsPaid = async (payment) => {
 
     await loadData();
 
+    setShowReceivePayment(false);
+    setSelectedPayment(null);
+    setSelectedPaymentMethod("");
+    setSelectedPaymentDate(
+      new Date().toISOString().split("T")[0]
+    );
+    
     alert("Payment marked as paid");
+    
+    return;
 
   } catch (error) {
     console.error(error);
@@ -1779,6 +1957,31 @@ const reportPayrollExpenses = filteredPayrolls.reduce(
 const reportNetProfit =
   reportTotalRevenue -
   reportTotalExpenses;
+  const profitMargin =
+  reportTotalRevenue > 0
+    ? (reportNetProfit / reportTotalRevenue) * 100
+    : 0;
+
+const averageProjectRevenue =
+  projects.length > 0
+    ? reportTotalRevenue / projects.length
+    : 0;
+
+const revenuePerEmployee =
+  employees.length > 0
+    ? reportTotalRevenue / employees.length
+    : 0;
+
+const expenseRatio =
+  reportTotalRevenue > 0
+    ? (reportTotalExpenses / reportTotalRevenue) * 100
+    : 0;
+
+const payrollRatio =
+  reportTotalRevenue > 0
+    ? (reportPayrollExpenses / reportTotalRevenue) * 100
+    : 0;  
+
   const departmentAnalysis = departments.map((dept) => {
 
     const deptRevenue = revenues
@@ -1905,7 +2108,100 @@ const reportNetProfit =
             ? "#CFCFCF"
             : "#FFB000",
       }));
+      const cashCollectionData = (() => {
+        const filteredProjects = projects.filter((project) => {
+          if (!project.start_date) return true;
+        
+          const projectDate = new Date(project.start_date);
+        
+          return (
+            (selectedYear === "All" ||
+              projectDate.getFullYear() === Number(selectedYear)) &&
+            (!reportFrom || projectDate >= new Date(reportFrom)) &&
+            (!reportTo || projectDate <= new Date(reportTo))
+          );
+        });
+      
+        const totalDue = projectPayments
+  .filter((payment) => {
+    const dueDate = new Date(payment.due_date);
 
+    return (
+      (selectedYear === "All" ||
+        dueDate.getFullYear() === Number(selectedYear)) &&
+      (!reportFrom || dueDate >= new Date(reportFrom)) &&
+      (!reportTo || dueDate <= new Date(reportTo))
+    );
+  })
+  .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+         
+      
+        const totalCollected = projectPayments
+        .filter((payment) => {
+          if (payment.status !== "Paid") return false;
+      
+          const paymentDate = new Date(payment.payment_date);
+      
+          return (
+            (selectedYear === "All" ||
+              paymentDate.getFullYear() === Number(selectedYear)) &&
+            (!reportFrom || paymentDate >= new Date(reportFrom)) &&
+            (!reportTo || paymentDate <= new Date(reportTo))
+          ); 
+        })
+        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      
+        const totalRemaining = totalDue - totalCollected;
+
+        const collectionRate =
+          totalDue === 0
+            ? 0
+            : (totalCollected / totalDue) * 100;
+        
+        return {
+          totalDue,
+          totalCollected,
+          totalRemaining,
+          collectionRate,
+        };
+      })();
+      
+      const projectFilteredRevenues = revenues.filter((revenue) => {
+        const revenueDate = new Date(revenue.revenue_date);
+      
+        return (
+          (selectedYear === "All" ||
+            revenueDate.getFullYear() === Number(selectedYear)) &&
+          (!reportFrom || revenueDate >= new Date(reportFrom)) &&
+          (!reportTo || revenueDate <= new Date(reportTo))
+        );
+      });
+      
+      const topProjectsRevenue = (() => {
+        const projectRevenue = projectFilteredRevenues.reduce((acc, revenue) => {
+          const projectName = revenue.project_name || "Unknown";
+      
+          if (!acc[projectName]) {
+            acc[projectName] = 0;
+          }
+      
+          acc[projectName] += Number(revenue.amount || 0);
+      
+          return acc;
+        }, {});
+      
+        const data = Object.entries(projectRevenue)
+          .map(([project_name, revenue]) => ({
+            project_name,
+            revenue,
+          }))
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 5);
+      
+        return data;
+      })();
+      
       const departmentTargetChartData =
       departmentTargetAnalysis
         .filter(dep => dep.target > 0 || dep.actualRevenue > 0)
@@ -1924,6 +2220,94 @@ const reportNetProfit =
               ? "#D9D9D9"
               : "#FDB515",
         }));
+        const bestDepartment =
+  departmentAnalysis.length > 0
+    ? [...departmentAnalysis].sort((a, b) => b.profit - a.profit)[0]
+    : null;
+
+const worstDepartment =
+  departmentAnalysis.length > 0
+    ? [...departmentAnalysis].sort((a, b) => a.profit - b.profit)[0]
+    : null;
+
+const bestProject =
+  topProjectsRevenue.length > 0
+    ? topProjectsRevenue[0]
+    : null;
+
+const highestRevenueEmployee = (() => {
+  const employeeRevenue = {};
+
+  revenues.forEach((r) => {
+    if (!r.employee_id) return;
+
+    employeeRevenue[r.employee_id] =
+      (employeeRevenue[r.employee_id] || 0) +
+      Number(r.amount || 0);
+  });
+
+  const winner = Object.entries(employeeRevenue).sort(
+    (a, b) => b[1] - a[1]
+  )[0];
+
+  if (!winner) return null;
+
+  const emp = employees.find(
+    (e) => String(e.id) === String(winner[0])
+  );
+
+  return {
+    name: emp?.name || "-",
+    revenue: winner[1],
+  };
+})();
+const formatNumber = (value) => {
+  if (!value) return "0";
+
+  if (value >= 1000000)
+    return `${(value / 1000000).toFixed(1).replace(".0", "")}M`;
+
+  if (value >= 1000)
+    return `${(value / 1000).toFixed(0)}K`;
+
+  return value.toLocaleString();
+};
+
+const highestRevenueCategory = (() => {
+  const data = {};
+
+  revenues.forEach((r) => {
+    const cat = revenueCategories.find(
+      (c) => Number(c.id) === Number(r.Revenue_Category_id)
+    );
+
+    const categoryName = cat?.revenue_categories || "Unknown";
+
+    data[categoryName] =
+      (data[categoryName] || 0) + Number(r.amount || 0);
+  });
+
+  return Object.entries(data).sort((a, b) => b[1] - a[1])[0];
+})();
+
+const highestExpenseCategory = (() => {
+  const data = {};
+
+  expenses.forEach((e) => {
+    if (e.project_name === "Monthly Salaries") return;
+
+    const cat = expenseCategories.find(
+      (c) => Number(c.id) === Number(e.expense_category_id)
+    );
+
+    const categoryName = cat?.expense_categories || "Unknown";
+
+    data[categoryName] =
+      (data[categoryName] || 0) + Number(e.amount || 0);
+  });
+
+  return Object.entries(data).sort((a, b) => b[1] - a[1])[0];
+})();
   return (
     <div className="app">
       <aside className="sidebar">
@@ -1934,6 +2318,9 @@ const reportNetProfit =
 />
 
         <ul className="menu">
+        <div className="sidebar-section-title">
+  MAIN
+</div>     
 
         <li
   className={activePage === "dashboard" ? "active" : ""}
@@ -1943,7 +2330,9 @@ const reportNetProfit =
   <span>Dashboard</span>
 </li>
 
-
+<div className="sidebar-section-title">
+  OPERATIONS
+</div>
 
 <li
   className={activePage === "clients" ? "active" : ""}
@@ -1968,7 +2357,9 @@ const reportNetProfit =
 <FaHandHoldingUsd />
   <span>P.Payments</span>
 </li>
-
+<div className="sidebar-section-title">
+  FINANCIAL MANAGEMENT
+</div>
 <li
   className={activePage === "revenues" ? "active" : ""}
   onClick={() => setActivePage("revenues")}
@@ -1992,13 +2383,7 @@ const reportNetProfit =
   <span>Adjustments</span>
 </li>
 
-<li
-  className={activePage === "payroll" ? "active" : ""}
-  onClick={() => setActivePage("payroll")}
->
-  <FaMoneyCheckAlt />
-  <span>Payroll</span>
-</li>
+
 <li
   className={activePage === "monthlyTargets" ? "active" : ""}
   onClick={() => setActivePage("monthlyTargets")}
@@ -2006,7 +2391,9 @@ const reportNetProfit =
 <FaBullseye />
   <span>monthly TGT</span>
 </li>
-
+<div className="sidebar-section-title">
+  HUMAN RESOURCES
+</div>
 <li
   className={activePage === "employees" ? "active" : ""}
   onClick={() => setActivePage("employees")}
@@ -2022,7 +2409,16 @@ const reportNetProfit =
   <FaBuilding />
   <span>Departments</span>
 </li>
-
+<li
+  className={activePage === "payroll" ? "active" : ""}
+  onClick={() => setActivePage("payroll")}
+>
+  <FaMoneyCheckAlt />
+  <span>Payroll</span>
+</li>
+<div className="sidebar-section-title">
+  ACCOUNTING
+</div>
 <li
   className={activePage === "reports" ? "active" : ""}
   onClick={() => setActivePage("reports")}
@@ -2030,7 +2426,32 @@ const reportNetProfit =
   <FaChartBar />
   <span>Reports</span>
 </li>
+<li
+  className={activePage === "assets" ? "active" : ""}
+  onClick={() => setActivePage("assets")}
+>
+  <FaWarehouse />
+  <span>Assets</span>
+</li>
 
+<li
+  className={activePage === "liabilities" ? "active" : ""}
+  onClick={() => setActivePage("liabilities")}
+>
+  <FaFileInvoiceDollar />
+  <span>Liabilities</span>
+</li>
+
+<li
+  className={activePage === "equity" ? "active" : ""}
+  onClick={() => setActivePage("equity")}
+>
+  <FaBalanceScale />
+  <span>Equity</span>
+</li>
+<div className="sidebar-section-title">
+  SYSTEM
+</div>
 <li
   className={activePage === "Settings" ? "active" : ""}
   onClick={() => setActivePage("Settings")}
@@ -2054,7 +2475,22 @@ const reportNetProfit =
 
     <button
       className="add-btn"
-      onClick={() => setShowAddEmployee(true)}
+      onClick={() => {
+        setEditingEmployee(null);
+      
+        setNewEmployee({
+          name: "",
+          phone: "",
+          email: "",
+          position: "",
+          department_id: "",
+          hire_date: "",
+          basic_salary: "",
+          salary_effective_from: "",
+        });
+      
+        setShowAddEmployee(true);
+      }}
     >
       + Add Employee
     </button>
@@ -2089,16 +2525,23 @@ const reportNetProfit =
   onClick={() => {
     setEditingEmployee(emp);
 
-    setNewEmployee({
-      name: emp.name || "",
-      phone: emp.phone || "",
-      email: emp.email || "",
-      position: emp.position || "",
-      department_id: emp.department_id || "",
-      basic_salary: emp.basic_salary || "",
-      hire_date: emp.hire_date || "",
-    });
-
+    const lastSalary =
+    emp.salary_history?.sort(
+      (a, b) =>
+        new Date(b.effective_from) - new Date(a.effective_from)
+    )[0];
+  
+  setNewEmployee({
+    name: emp.name || "",
+    phone: emp.phone || "",
+    email: emp.email || "",
+    position: emp.position || "",
+    department_id: emp.department_id || "",
+    basic_salary: lastSalary?.salary_amount || emp.basic_salary || "",
+    hire_date: emp.hire_date || "",
+    salary_effective_from:
+      lastSalary?.effective_from || "",
+  });  
     setShowAddEmployee(true);
   }}
 >
@@ -2122,7 +2565,9 @@ const reportNetProfit =
   <div className="modal-overlay">
     <div className="modal">
 
-      <h2>Add Employee</h2>
+    <h2>
+  {editingEmployee ? "Edit Employee" : "Add Employee"}
+</h2>
 
       <input
         placeholder="Name"
@@ -2197,7 +2642,22 @@ const reportNetProfit =
     })
   }
 />
+{editingEmployee && (
+  <>
+    <label>Salary Effective From *</label>
 
+    <input
+      type="date"
+      value={newEmployee.salary_effective_from || ""}
+      onChange={(e) =>
+        setNewEmployee({
+          ...newEmployee,
+          salary_effective_from: e.target.value,
+        })
+      }
+    />
+  </>
+)}
       <input
         placeholder="Basic Salary"
         value={newEmployee.basic_salary}
@@ -2212,12 +2672,22 @@ const reportNetProfit =
       <div className="modal-actions">
 
       <button
-      className="save-btn"
+  className="save-btn"
   onClick={() => {
+
     if (editingEmployee) {
+
+      if (!newEmployee.salary_effective_from) {
+        alert("Please select the Salary Effective From date.");
+        return;
+      }
+
       updateEmployee();
+
     } else {
+
       addEmployee();
+
     }
   }}
 >
@@ -2320,7 +2790,16 @@ const reportNetProfit =
   {payment.status !== "Paid" && (
     <button
     className="add-btn"
-    onClick={() => markPaymentAsPaid(payment)}
+    onClick={() => {
+      setSelectedPayment(payment);
+      setSelectedPaymentMethod("");
+    
+      setSelectedPaymentDate(
+        new Date().toISOString().split("T")[0]
+      );
+    
+      setShowReceivePayment(true);
+    }}
   >
     Mark As Paid
   </button>
@@ -2433,7 +2912,87 @@ const reportNetProfit =
 )}
     </div>
     
+    {showReceivePayment && (
+  <div className="modal-overlay">
+    <div className="modal">
 
+      <div className="modal-header">
+        <h2>Receive Payment</h2>
+      </div>
+
+      <div className="modal-body">
+
+        <p>
+          Amount:
+          <strong>
+            {" "}
+            {Number(selectedPayment?.amount || 0).toLocaleString()}
+          </strong>
+        </p>
+
+        <select
+          value={selectedPaymentMethod}
+          onChange={(e) =>
+            setSelectedPaymentMethod(e.target.value)
+          }
+        >
+          <option value="">
+            Select Payment Method
+          </option>
+
+          {paymentMethods.map((method) => (
+            <option
+              key={method.id}
+              value={method.id}
+            >
+              {method.method_name}
+            </option>
+          ))}
+        </select>
+        <input
+  type="date"
+  value={selectedPaymentDate}
+  onChange={(e) =>
+    setSelectedPaymentDate(e.target.value)
+  }
+/>
+
+      </div>
+
+      <div className="modal-footer">
+
+        <button
+          className="cancel-btn"
+          onClick={() => {
+            setShowReceivePayment(false);
+setSelectedPayment(null);
+setSelectedPaymentMethod("");
+setSelectedPaymentDate(
+  new Date().toISOString().split("T")[0]
+);
+          }}
+        >
+          Cancel
+        </button>
+
+        <button
+          className="add-btn"
+          onClick={() =>
+            markPaymentAsPaid(
+              selectedPayment,
+              selectedPaymentMethod,
+              selectedPaymentDate
+            )
+          }
+        >
+          Confirm Payment
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+)}
   </div>
 )}
 
@@ -4042,41 +4601,287 @@ value={newRevenue.Revenue_Category_id}
 
     <div className="card">
 
-      <div
-        style={{
-          display: "flex",
-          gap: "15px",
-          marginBottom: "20px",
-        }}
-      >
-        <input
-          type="date"
-          value={reportFrom}
-          onChange={(e) => setReportFrom(e.target.value)}
-        />
+    <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    marginBottom: "25px",
+    flexWrap: "wrap",
+  }}
+>
 
-        <input
-          type="date"
-          value={reportTo}
-          onChange={(e) => setReportTo(e.target.value)}
-        />
+<div className="report-toolbar">
+
+<select
+  className="report-filter"
+  value={selectedReport}
+  onChange={(e) => setSelectedReport(e.target.value)}
+>
+
+  <optgroup label="📊 Executive Reports">
+    <option value="Executive Summary">Executive Summary</option>
+    <option value="Financial Statement">Financial Statement</option>
+    <option value="Profitability Analysis">Profitability Analysis</option>
+  </optgroup>
+
+  <optgroup label="📑 Financial Statements">
+    <option value="Statement of Financial Position">
+      Statement of Financial Position
+    </option>
+
+    <option value="Income Statement">
+      Income Statement
+    </option>
+
+    <option value="Cash Flow Statement">
+      Cash Flow Statement
+    </option>
+  </optgroup>
+
+  <optgroup label="💰 Financial Reports">
+    <option value="Revenue Report">Revenue Report</option>
+    <option value="Expense Report">Expense Report</option>
+    <option value="Payroll Report">Payroll Report</option>
+    <option value="Financial Transactions">
+      Financial Transactions
+    </option>
+  </optgroup>
+
+  <optgroup label="📈 Performance Reports">
+    <option value="Department Performance">
+      Department Performance
+    </option>
+
+    <option value="Project Report">
+      Project Report
+    </option>
+
+    <option value="Employee Performance">
+      Employee Performance
+    </option>
+  </optgroup>
+
+</select> 
+  <input
+    className="report-filter"
+    type="date"
+    value={reportFrom}
+    onChange={(e) => setReportFrom(e.target.value)}
+  />
+
+  <input
+    className="report-filter"
+    type="date"
+    value={reportTo}
+    onChange={(e) => setReportTo(e.target.value)}
+  />
+
+  <div
+    style={{
+      marginLeft: "auto",
+      position: "relative",
+    }}
+  >
+    <button
+      className="export-btn"
+      onClick={() => setShowExportMenu(!showExportMenu)}
+    >
+      <FaDownload />
+      Export
+      <FaChevronDown />
+    </button>
+
+    {showExportMenu && (
+  <div className="export-menu">
+
+    <div
+      className="export-item"
+      onClick={() => {
+        exportToExcel();
+        setShowExportMenu(false);
+      }}
+    >
+      <FaFileExcel />
+      <span>Export Excel</span>
+    </div>
+
+    <div className="export-item">
+      <FaFilePdf />
+      <span>Export PDF</span>
+    </div>
+
+    <div className="export-item">
+      <FaPrint />
+      <span>Print Report</span>
+    </div>
+
+  </div>
+)}
+  </div>
+
+</div>
+
+</div>  
+{selectedReport === "Executive Summary" && (
+  <>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, minmax(260px,1fr))",
+        gap: "20px",
+      }}
+    >
+      <div className="summary-card revenue-card">
+        <h4>Total Revenue</h4>
+        <h2>
+  <span>{formatNumber(reportTotalRevenue)}</span>
+  <small>EGP</small>
+</h2>
       </div>
 
-      <h3>
-  Total Revenue: {reportTotalRevenue.toLocaleString()}
-</h3>
+      <div className="summary-card expense-card">
+        <h4>Total Expenses</h4>
+        <h2>
+  <span>{formatNumber(reportTotalExpenses)}</span>
+  <small>EGP</small>
+</h2>
+      </div>
 
-<h3>
-  Total Expenses: {reportTotalExpenses.toLocaleString()}
-</h3>
+      <div className="summary-card payroll-card">
+        <h4>Payroll</h4>
+        <h2>
+  <span>{formatNumber(reportPayrollExpenses)}</span>
+  <small>EGP</small>
+</h2>
+      </div>
 
-<h3>
-  Payroll Expenses: {reportPayrollExpenses.toLocaleString()}
-</h3>
+      <div className="summary-card profit-card">
+        <h4>Net Profit</h4>
+        <h2>
+  <span>{formatNumber(reportNetProfit)}</span>
+  <small>EGP</small>
+</h2>
+      </div>
 
-<h3>
-  Net Profit: {reportNetProfit.toLocaleString()}
-</h3>
+      <div className="summary-card project-card">
+        <h4>Projects</h4>
+        <h2>{projects.length}</h2>
+      </div>
+
+      <div className="summary-card employee-card">
+        <h4>Employees</h4>
+        <h2>{employees.length}</h2>
+      </div>
+
+      <div className="summary-card margin-card">
+        <h4>Profit Margin</h4>
+        <h2>
+          {reportTotalRevenue > 0
+            ? ((reportNetProfit / reportTotalRevenue) * 100).toFixed(2)
+            : 0}
+          %
+        </h2>
+      </div>
+
+      <div className="summary-card collection-card">
+        <h4>Collection Rate</h4>
+        <h2>{cashCollectionData.collectionRate.toFixed(2)}%</h2>
+      </div>
+
+      <div className="summary-card avg-card">
+        <h4>Average Project Revenue</h4>
+        <h2>
+  <span>
+    {projects.length > 0
+      ? formatNumber(reportTotalRevenue / projects.length)
+      : "0"}
+  </span>
+  <small>EGP</small>
+</h2>
+      </div>
+
+      <div className="summary-card revemp-card">
+        <h4>Revenue per Employee</h4>
+        <h2>
+  <span>
+    {employees.length > 0
+      ? formatNumber(reportTotalRevenue / employees.length)
+      : "0"}
+  </span>
+  <small>EGP</small>
+</h2>
+      </div>
+
+      <div className="summary-card expratio-card">
+        <h4>Expense Ratio</h4>
+        <h2>
+          {reportTotalRevenue
+            ? ((reportTotalExpenses / reportTotalRevenue) * 100).toFixed(2)
+            : 0}
+          %
+        </h2>
+      </div>
+
+      <div className="summary-card">
+        <h4>Payroll Ratio</h4>
+        <h2>
+          {reportTotalRevenue
+            ? ((reportPayrollExpenses / reportTotalRevenue) * 100).toFixed(2)
+            : 0}
+          %
+        </h2>
+      </div>
+    </div>
+
+    <div style={{ marginTop: "50px" }}>
+      <h2 style={{ marginBottom: "20px" }}>
+        Executive Highlights
+      </h2>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(300px,1fr))",
+          gap: "20px",
+        }}
+      >
+        <div className="summary-card highlight-card">
+          <h4>🏆 Best Department</h4>
+          <h2>{bestDepartment?.department || "-"}</h2>
+        </div>
+
+        <div className="summary-card highlight-card">
+          <h4>📉 Worst Department</h4>
+          <h2>{worstDepartment?.department || "-"}</h2>
+        </div>
+
+        <div className="summary-card highlight-card">
+          <h4>🚀 Most Profitable Project</h4>
+          <h2>{bestProject?.project_name || "-"}</h2>
+        </div>
+
+        <div className="summary-card highlight-card">
+          <h4>👤 Highest Revenue Employee</h4>
+          <h2>{highestRevenueEmployee?.name || "-"}</h2>
+        </div>
+
+        <div className="summary-card highlight-card">
+          <h4>💰 Highest Revenue Category</h4>
+          <h2>{highestRevenueCategory?.[0] || "-"}</h2>
+        </div>
+
+        <div className="summary-card highlight-card">
+          <h4>💸 Highest Expense Category</h4>
+          <h2>{highestExpenseCategory?.[0] || "-"}</h2>
+        </div>
+      </div>
+    </div>
+  </>
+)}
+
+{selectedReport === "Revenue Report" && (
+  <>
 <h2 style={{ marginTop: "30px" }}>
   Revenue Details
 </h2>
@@ -4138,6 +4943,10 @@ value={newRevenue.Revenue_Category_id}
     ))}
   </tbody>
 </table>
+</>
+)}
+{selectedReport === "Expense Report" && (
+  <>
 <h2 style={{ marginTop: "30px" }}>
   Expense Details
 </h2>
@@ -4206,6 +5015,10 @@ value={newRevenue.Revenue_Category_id}
     ))}
   </tbody>
 </table>
+</>
+)}
+{selectedReport === "Department Performance" && (
+  <>
 <h2 style={{ marginTop: "40px" }}>
   Department Cost Analysis
 </h2>
@@ -4259,6 +5072,7 @@ value={newRevenue.Revenue_Category_id}
 <h2 style={{ marginTop: "40px" }}>
   Department Target Analysis
 </h2>
+
 <table>
   <thead>
     <tr>
@@ -4274,26 +5088,16 @@ value={newRevenue.Revenue_Category_id}
     {departmentTargetAnalysis.map((item, index) => (
       <tr key={index}>
         <td>{item.department}</td>
-
-        <td>
-          {item.target.toLocaleString()}
-        </td>
-
-        <td>
-          {item.actualRevenue.toLocaleString()}
-        </td>
-
-        <td>
-          {item.variance.toLocaleString()}
-        </td>
-
-        <td>
-          {item.achievement.toFixed(2)}%
-        </td>
+        <td>{item.target.toLocaleString()}</td>
+        <td>{item.actualRevenue.toLocaleString()}</td>
+        <td>{item.variance.toLocaleString()}</td>
+        <td>{item.achievement.toFixed(2)}%</td>
       </tr>
     ))}
   </tbody>
 </table>
+</>
+)}
 
     </div>
 
@@ -4418,24 +5222,34 @@ value={newRevenue.Revenue_Category_id}
 
     >
 
-      {revenueChartData.map((entry, index) => (
-        <Cell
-          key={index}
-          fill={
-            DEPARTMENT_COLORS[
-              index % DEPARTMENT_COLORS.length
-            ]
-          }
-        />
-      ))}
+{revenueChartData.map((entry) => (
+  <Cell
+    key={entry.name}
+    fill={DEPARTMENT_COLORS[entry.name] || "#64748B"}
+  />
+))}
 
     </Pie>
 
     <Tooltip
-      formatter={(value) =>
-        Number(value).toLocaleString()
-      }
-    />
+  cursor={false}
+  contentStyle={{
+    backgroundColor: "#141C2E",
+    border: "1px solid #3A455E",
+    borderRadius: "18px",
+    color: "#fff",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+  }}
+  labelStyle={{
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: 700,
+  }}
+  itemStyle={{
+    fontSize: 16,
+    fontWeight: 600,
+  }}
+/>
 
 <text
   x="25%"
@@ -4469,77 +5283,70 @@ value={newRevenue.Revenue_Category_id}
     width: "320px",
   }}
 >
-  {revenueChartData.map((item, index) => {
+{revenueChartData.map((item) => {
 
-    const percentage =
-      ((item.amount / totalRevenueValue) * 100).toFixed(1);
+const percentage =
+  ((item.amount / totalRevenueValue) * 100).toFixed(1);
 
-    return (
+return (
+  <div
+    key={item.name}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "14px 0",
+      borderBottom: "1px solid rgba(255,255,255,0.08)",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+      }}
+    >
       <div
-        key={index}
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "14px 0",
-          borderBottom:
-            "1px solid rgba(255,255,255,0.08)",
+          width: "14px",
+          height: "14px",
+          borderRadius: "4px",
+          background: DEPARTMENT_COLORS[item.name] || "#64748B",
+        }}
+      />
+
+      <span
+        style={{
+          color: "#fff",
+          fontSize: "18px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <div
-            style={{
-              width: "14px",
-              height: "14px",
-              borderRadius: "4px",
-              background:
-                DEPARTMENT_COLORS[
-                  index % DEPARTMENT_COLORS.length
-                ],
-            }}
-          />
+        {item.name}
+      </span>
+    </div>
 
-          <span
-            style={{
-              color: "#fff",
-              fontSize: "18px",
-            }}
-          >
-            {item.name}
-          </span>
-        </div>
-
-        <div style={{ textAlign: "right" }}>
-          <div
-            style={{
-              color: "#fff",
-              fontWeight: "600",
-            }}
-          >
-            {item.amount.toLocaleString()}
-          </div>
-
-          <div
-            style={{
-              color:
-                DEPARTMENT_COLORS[
-                  index % DEPARTMENT_COLORS.length
-                ],
-              fontWeight: "bold",
-            }}
-          >
-            {percentage}%
-          </div>
-        </div>
+    <div style={{ textAlign: "right" }}>
+      <div
+        style={{
+          color: "#fff",
+          fontWeight: "600",
+        }}
+      >
+        {item.amount.toLocaleString()}
       </div>
-    );
-  })}
+
+      <div
+        style={{
+          color: DEPARTMENT_COLORS[item.name] || "#64748B",
+          fontWeight: "bold",
+        }}
+      >
+        {percentage}%
+      </div>
+    </div>
+  </div>
+);
+})} 
 </div>
   </div>
 
@@ -4584,23 +5391,33 @@ value={newRevenue.Revenue_Category_id}
         stroke="#0B1120"
         strokeWidth={2}
       >
-        {expenseChartData.map((entry, index) => (
-          <Cell
-            key={index}
-            fill={
-              DEPARTMENT_COLORS[
-                index % DEPARTMENT_COLORS.length
-              ]
-            }
-          />
-        ))}
+       {expenseChartData.map((entry) => (
+  <Cell
+    key={entry.name}
+    fill={DEPARTMENT_COLORS[entry.name] || "#64748B"}
+  />
+))}
       </Pie>
 
       <Tooltip
-        formatter={(value) =>
-          Number(value).toLocaleString()
-        }
-      />
+  cursor={false}
+  contentStyle={{
+    backgroundColor: "#141C2E",
+    border: "1px solid #3A455E",
+    borderRadius: "18px",
+    color: "#fff",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+  }}
+  labelStyle={{
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: 700,
+  }}
+  itemStyle={{
+    fontSize: 16,
+    fontWeight: 600,
+  }}
+/>
           <text
   x="25%"
   y="47%"
@@ -4632,77 +5449,70 @@ value={newRevenue.Revenue_Category_id}
     width: "320px",
   }}
 >
-  {expenseChartData.map((item, index) => {
+{expenseChartData.map((item) => {
 
-    const percentage =
-      ((item.amount / totalExpenseValue) * 100).toFixed(1);
-     
-    return (
+const percentage =
+  ((item.amount / totalExpenseValue) * 100).toFixed(1);
+
+return (
+  <div
+    key={item.name}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "14px 0",
+      borderBottom: "1px solid rgba(255,255,255,0.08)",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+      }}
+    >
       <div
-        key={index}
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "14px 0",
-          borderBottom:
-            "1px solid rgba(255,255,255,0.08)",
+          width: "14px",
+          height: "14px",
+          borderRadius: "4px",
+          background: DEPARTMENT_COLORS[item.name] || "#64748B",
+        }}
+      />
+
+      <span
+        style={{
+          color: "#fff",
+          fontSize: "18px",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <div
-            style={{
-              width: "14px",
-              height: "14px",
-              borderRadius: "4px",
-              background:
-                DEPARTMENT_COLORS[
-                  index % DEPARTMENT_COLORS.length
-                ],
-            }}
-          />
+        {item.name}
+      </span>
+    </div>
 
-          <span
-            style={{
-              color: "#fff",
-              fontSize: "18px",
-            }}
-          >
-            {item.name}
-          </span>
-        </div>
-
-        <div style={{ textAlign: "right" }}>
-          <div
-            style={{
-              color: "#fff",
-              fontWeight: "600",
-            }}
-          >
-            {item.amount.toLocaleString()}
-          </div>
-
-          <div
-            style={{
-              color:
-                DEPARTMENT_COLORS[
-                  index % DEPARTMENT_COLORS.length
-                ],
-              fontWeight: "bold",
-            }}
-          >
-            {percentage}%
-          </div>
-        </div>
+    <div style={{ textAlign: "right" }}>
+      <div
+        style={{
+          color: "#fff",
+          fontWeight: "600",
+        }}
+      >
+        {item.amount.toLocaleString()}
       </div>
-    );
-  })}
+
+      <div
+        style={{
+          color: DEPARTMENT_COLORS[item.name] || "#64748B",
+          fontWeight: "bold",
+        }}
+      >
+        {percentage}%
+      </div>
+    </div>
+  </div>
+);
+})} 
 </div>
 </div>
   </div>
@@ -4712,49 +5522,241 @@ value={newRevenue.Revenue_Category_id}
 
 <div className="trend-row">
 
-  <div className="chart-card">
-    <h2>Monthly Revenue Trend</h2>
+<div className="chart-card">
+  <h2>Monthly Financial Performance</h2>
 
-    <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={monthlyRevenueData}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis
+  <ResponsiveContainer width="100%" height={420}>
+  <BarChart
+  data={monthlyFinancialData}
+  barGap={8}
+  barCategoryGap="30%"
+>
+    <CartesianGrid strokeDasharray="3 3" />
+
+    <XAxis
   dataKey="month"
-  padding={{ left: 20, right: 20 }}
+  tick={{ fill: "#9CA3AF", fontSize: 13 }}
 />
-        <Tooltip />
-        <Line
-          type="monotone"
-          dataKey="amount"
-          stroke="#84CC16"
-          strokeWidth={3}
-        />
-      </LineChart>
-    </ResponsiveContainer>
 
+    <YAxis
+  tick={{ fill: "#9CA3AF", fontSize: 12 }}
+  tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`}
+/>
+
+<Tooltip
+  cursor={{
+    fill: "#07111F",
+    fillOpacity: 1,
+  }}
+  content={({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+
+    const revenue = payload.find(p => p.dataKey === "revenue");
+    const expenses = payload.find(p => p.dataKey === "expenses");
+    const profit = payload.find(p => p.dataKey === "profit");
+
+    return (
+      <div
+        style={{
+          background: "#141C2E",
+          border: "1px solid #3A455E",
+          borderRadius: 18,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            color: "#fff",
+            fontSize: 18,
+            fontWeight: 700,
+            marginBottom: 10,
+          }}
+        >
+          {label}
+        </div>
+
+        <div style={{ color: "#FF00E5", fontSize: 16 }}>
+          Revenue : {revenue?.value?.toLocaleString()}
+        </div>
+
+        <div style={{ color: "#BFBFBF", fontSize: 16 }}>
+          Expenses : {expenses?.value?.toLocaleString()}
+        </div>
+
+        <div style={{ color: "#84CC16", fontSize: 16 }}>
+          Net Profit : {profit?.value?.toLocaleString()}
+        </div>
+      </div>
+    );
+  }}
+/>
+
+<Bar
+  dataKey="revenue"
+  name="Revenue"
+  fill="#FF00E5"
+  barSize={32}
+/>
+
+<Bar
+  dataKey="expenses"
+  name="Expenses"
+  fill="#BFBFBF"
+  barSize={32}
+/>
+
+<Bar
+  dataKey="profit"
+  name="Net Profit"
+  fill="#84CC16"
+  barSize={32}
+>
+  <LabelList
+    dataKey="profit"
+    position="top"
+    formatter={(v) => (v ? `${Math.round(v / 1000)}K` : "")}
+    fill="#84CC16"
+    fontSize={18}
+  />
+</Bar>
+  
+
+  </BarChart>
+</ResponsiveContainer>
+<div
+  style={{
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "35px",
+    marginTop: "18px",
+    fontSize: "18px",
+    fontWeight: 500,
+  }}
+>
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{
+        width: 16,
+        height: 16,
+        background: "#FF00E5",
+      }}
+    />
+    <span style={{ color: "#FF00E5" }}>Revenue</span>
+  </div>
+
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{
+        width: 16,
+        height: 16,
+        background: "#BFBFBF",
+      }}
+    />
+    <span style={{ color: "#BFBFBF" }}>Expenses</span>
+  </div>
+
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{
+        width: 16,
+        height: 16,
+        background: "#84CC16",
+      }}
+    />
+    <span style={{ color: "#84CC16" }}>Net Profit</span>
+  </div>
+</div>
   </div>
 
   <div className="chart-card">
-    <h2>Monthly Expense Trend</h2>
 
-    <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={monthlyExpenseData}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis
-  dataKey="month"
-  padding={{ left: 20, right: 20 }}
-/>
-        <Tooltip />
-        <Line
-          type="monotone"
-          dataKey="amount"
-          stroke="#EF4444"
-          strokeWidth={3}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+<h2>Net Profit Trend</h2>
 
+<ResponsiveContainer width="100%" height={420}>
+  <LineChart data={monthlyFinancialData}>
+
+    <CartesianGrid stroke="#334155" strokeDasharray="4 4" />
+
+    <XAxis
+      dataKey="month"
+      tick={{ fill: "#9CA3AF", fontSize: 13 }}
+    />
+
+    <YAxis
+      tick={{ fill: "#9CA3AF", fontSize: 12 }}
+      tickFormatter={(v) => `${Math.round(v / 1000)}K`}
+    />
+
+    <Tooltip
+      formatter={(v) => Number(v).toLocaleString()}
+      contentStyle={{
+        background: "#111827",
+        border: "1px solid #334155",
+        borderRadius: 10,
+        color: "#fff",
+      }}
+    />
+
+
+    <Line
+      type="monotone"
+      dataKey="profit"
+      name="Net Profit"
+      stroke="#84CC16"
+      strokeWidth={4}
+      dot={{
+        fill: "#84CC16",
+        r: 5,
+        stroke: "#fff",
+        strokeWidth: 2,
+      }}
+      activeDot={{
+        r: 8,
+        fill: "#84CC16",
+        stroke: "#fff",
+        strokeWidth: 2,
+      }}
+    />
+
+  </LineChart>
+</ResponsiveContainer>
+<div
+  style={{
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: "20px",
+    marginBottom: "10px",
+    fontSize: "18px",
+    fontWeight: 500,
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    }}
+  >
+  
+
+    <div
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        background: "#84CC16",
+      }}
+    />
+
+    <span style={{ color: "#84CC16" }}>
+      Net Profit
+    </span>
   </div>
+</div>
+
+</div>
 
 </div>
         <div className="dashboard-grid">
@@ -4776,6 +5778,10 @@ value={newRevenue.Revenue_Category_id}
       />
 
 <Tooltip
+  cursor={{
+    fill: "#07111F",
+    fillOpacity: 1,
+  }}
   content={({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
 
@@ -4784,18 +5790,18 @@ value={newRevenue.Revenue_Category_id}
     return (
       <div
         style={{
-          background: "#F5F5F5",
-          padding: "15px",
-          borderRadius: "8px",
-          border: "1px solid #DDD",
+          background: "#141C2E",
+          border: "1px solid #3A455E",
+          borderRadius: 18,
+          padding: 18,
         }}
       >
         <div
           style={{
-            color: data.color,
-            fontSize: "22px",
-            fontWeight: "bold",
-            marginBottom: "10px",
+            color: "#fff",
+            fontSize: 18,
+            fontWeight: 700,
+            marginBottom: 10,
           }}
         >
           {label}
@@ -4803,21 +5809,23 @@ value={newRevenue.Revenue_Category_id}
 
         <div
           style={{
-            color: "#FF4D4F",
-            fontSize: "18px",
+            color: data.color,
+            fontSize: 16,
+            fontWeight: 600,
           }}
         >
-          % Contribution : {data.contribution.toFixed(2)}%
+          Net Profit : {Number(data.profit || 0).toLocaleString()}
         </div>
 
         <div
           style={{
-            color: "#1E90FF",
-            fontSize: "18px",
-            marginTop: "8px",
+            color: "#FF5A5F",
+            fontSize: 16,
+            fontWeight: 600,
+            marginTop: 8,
           }}
         >
-          Net Profit : {Number(data.profit).toLocaleString()}
+          Contribution : {(data.contribution || 0).toFixed(2)}%
         </div>
       </div>
     );
@@ -4835,7 +5843,7 @@ value={newRevenue.Revenue_Category_id}
   yAxisId="left"
   dataKey="profit"
   name="Net Profit"
-  fill="#1E90FF"
+  fill="#8BE000"
 >
 
   {departmentProfitChartData.map((entry, index) => (
@@ -4892,9 +5900,53 @@ value={newRevenue.Revenue_Category_id}
         hide={true}
       />
 
-      <Tooltip
-        content={<TargetTooltip />}
-      />
+<Tooltip
+  cursor={{
+    fill: "#07111F",
+    fillOpacity: 1,
+  }}
+  content={({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+
+    const actual = payload.find((p) => p.dataKey === "actualRevenue");
+    const target = payload.find((p) => p.dataKey === "target");
+    const achievement = payload.find((p) => p.dataKey === "achievement");
+
+    return (
+      <div
+        style={{
+          background: "#141C2E",
+          border: "1px solid #3A455E",
+          borderRadius: 18,
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            color: "#fff",
+            fontSize: 18,
+            fontWeight: 700,
+            marginBottom: 10,
+          }}
+        >
+          {label}
+        </div>
+
+        <div style={{ color: "#84CC16", fontSize: 16 }}>
+          Actual Revenue : {Number(actual?.value).toLocaleString()}
+        </div>
+
+        <div style={{ color: "#3B82F6", fontSize: 16 }}>
+          Target : {Number(target?.value).toLocaleString()}
+        </div>
+
+        <div style={{ color: "#FF5A5F", fontSize: 16 }}>
+          Achievement : {achievement?.value}%
+        </div>
+      </div>
+    );
+  }}
+/>
 
       <Legend
         wrapperStyle={{
@@ -4995,39 +6047,133 @@ value={newRevenue.Revenue_Category_id}
   </ResponsiveContainer>
 </div>     
 
-          <div className="panel">
-            <h2>Employees</h2>
+<div className="chart-card">
+  <h2>Top 5 Projects by Revenue</h2>
+  <ResponsiveContainer width="100%" height={447}>
+  <BarChart
+    data={topProjectsRevenue}
+    layout="vertical"
+    margin={{ top: 20, right: 40, left: 40, bottom: 20 }}
+  >
+    <CartesianGrid strokeDasharray="3 3" stroke="#555" />
 
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Position</th>
-                </tr>
-              </thead>
+    <XAxis
+      type="number"
+      stroke="#fff"
+    />
 
-              
-              <tbody>
-                {employees.map((emp) => (
-                  <tr key={emp.id}>
-                    <td>{emp.name}</td>
-                    <td>{emp.position}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+    <YAxis
+      dataKey="project_name"
+      type="category"
+      stroke="#fff"
+      width={150}
+    />
 
-          <div className="panel">
-            <h2>Company Summary</h2>
+<Tooltip
+  cursor={{ fill: "transparent" }}
+  contentStyle={{
+    backgroundColor: "#111827",
+    border: "none",
+    borderRadius: "14px",
+    boxShadow: "0 8px 20px rgba(0,0,0,.35)",
+  }}
+  labelStyle={{
+    color: "#fff",
+    fontWeight: 600,
+  }}
+  itemStyle={{
+    color: "#84CC16",
+  }}
+/>
 
-            <div className="stats">
-              <p>Total Employees: {employees.length}</p>
-              <p>Total Departments: {departments.length}</p>
-              <p>Total Revenue: {totalRevenue.toLocaleString()}</p>
-              <p>Total Expenses: {totalExpenses.toLocaleString()}</p>
-              <p>Net Profit: {netProfit.toLocaleString()}</p>
-            </div>
+    <Bar
+      dataKey="revenue"
+      fill="#84cc16"
+      radius={[0, 8, 8, 0]}
+    />
+  </BarChart>
+</ResponsiveContainer>
+
+</div>       
+
+<div className="panel cash-panel">
+          <div className="chart-card">
+  <h2>Cash Collection Rate</h2>
+
+  <ResponsiveContainer width="100%" height={340}>
+    <RadialBarChart
+      innerRadius="70%"
+      outerRadius="95%"
+      data={[
+        {
+          name: "Collection",
+          value: cashCollectionData.collectionRate,
+          fill: "#84CC16",
+        },
+      ]}
+      startAngle={90}
+      endAngle={-270}
+    >
+      <PolarAngleAxis
+        type="number"
+        domain={[0, 100]}
+        angleAxisId={0}
+        tick={false}
+      />
+<RadialBar
+  dataKey="value"
+  cornerRadius={15}
+/>
+      <text
+        x="50%"
+        y="47%"
+        textAnchor="middle"
+        fill="#fff"
+        fontSize="18"
+        fontWeight="600"
+      >
+        Collection
+      </text>
+
+      <text
+        x="50%"
+        y="58%"
+        textAnchor="middle"
+        fill="#84CC16"
+        fontSize="34"
+        fontWeight="700"
+      >
+        {cashCollectionData.collectionRate.toFixed(1)}%
+      </text>
+    </RadialBarChart>
+  </ResponsiveContainer>
+
+
+  <div className="summary-grid">
+
+    <div className="summary-item">
+      <span>Total Due</span>
+      <strong>
+      {cashCollectionData.totalDue.toLocaleString()}
+      </strong>
+    </div>
+
+    <div className="summary-item">
+      <span>Collected</span>
+      <strong style={{ color: "#84CC16" }}>
+        {cashCollectionData.totalCollected.toLocaleString()}
+      </strong>
+    </div>
+
+    <div className="summary-item">
+      <span>Remaining</span>
+      <strong style={{ color: "#FF4D4F" }}>
+        {cashCollectionData.totalRemaining.toLocaleString()}
+      </strong>
+    </div>
+
+  </div>
+</div>  
           </div>
 
         </div>
